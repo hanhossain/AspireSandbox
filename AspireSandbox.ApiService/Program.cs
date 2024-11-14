@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Confluent.Kafka;
 using Microsoft.Extensions.Caching.Distributed;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
 builder.AddRedisDistributedCache("cache");
+builder.AddKafkaProducer<string, string>("kafka");
 
 var app = builder.Build();
 
@@ -25,7 +27,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapGet("/weatherforecast", async (IDistributedCache cache) =>
+app.MapGet("/weatherforecast", async (IDistributedCache cache, IProducer<string, string> producer) =>
 {
     var cachedForecast = await cache.GetAsync("forecast");
     if (cachedForecast is null)
@@ -44,9 +46,21 @@ app.MapGet("/weatherforecast", async (IDistributedCache cache) =>
         {
             AbsoluteExpiration = DateTime.Now.AddSeconds(10)
         });
+
+        producer.Produce("topic1", new Message<string, string>
+        {
+            Key = DateTime.Now.ToString("o"),
+            Value = "New forecast generated."
+        });
         
         return forecast;
     }
+
+    producer.Produce("topic1", new Message<string, string>()
+    {
+        Key = DateTime.Now.ToString("o"),
+        Value = "Cached forecast retrieved."
+    });
 
     return JsonSerializer.Deserialize<IEnumerable<WeatherForecast>>(cachedForecast);
 })
