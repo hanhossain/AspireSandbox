@@ -1,6 +1,10 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var apiService = builder.AddProject<Projects.AspireSandbox_ApiService>("apiservice");
+var redis = builder.AddRedis("cache");
+
+var apiService = builder.AddProject<Projects.AspireSandbox_ApiService>("apiservice")
+    .WithReference(redis)
+    .WaitFor(redis);
 
 builder.AddProject<Projects.AspireSandbox_Web>("webfrontend")
     .WithExternalHttpEndpoints()

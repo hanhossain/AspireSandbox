@@ -1,3 +1,7 @@
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Caching.Distributed;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add service defaults & Aspire client integrations.
@@ -9,6 +13,8 @@ builder.Services.AddProblemDetails();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.AddRedisDistributedCache("cache");
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -19,19 +25,30 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-string[] summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"];
-
-app.MapGet("/weatherforecast", () =>
+app.MapGet("/weatherforecast", async (IDistributedCache cache) =>
 {
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
+    var cachedForecast = await cache.GetAsync("forecast");
+    if (cachedForecast is null)
+    {
+        string[] summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"];
+        var forecast = Enumerable.Range(1, 5).Select(index => 
+            new WeatherForecast
+            (
+                DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+                Random.Shared.Next(-20, 55),
+                summaries[Random.Shared.Next(summaries.Length)]
+            ))
+            .ToArray();
+
+        await cache.SetAsync("forecast", Encoding.UTF8.GetBytes(JsonSerializer.Serialize(forecast)), new()
+        {
+            AbsoluteExpiration = DateTime.Now.AddSeconds(10)
+        });
+        
+        return forecast;
+    }
+
+    return JsonSerializer.Deserialize<IEnumerable<WeatherForecast>>(cachedForecast);
 })
 .WithName("GetWeatherForecast");
 
